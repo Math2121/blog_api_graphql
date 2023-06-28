@@ -1,14 +1,19 @@
 import { Context } from "../..";
 import validator from "validator"
 import bcrypt from "bcryptjs"
-import Jwt  from "jsonwebtoken";
+import Jwt from "jsonwebtoken";
 import { JWT_SIGNTURE } from "../../keys";
 interface SignUpArgs {
-    email: string;
+    credentials: {
+        password: string
+        email: string;
+    }
+
     name: string;
     bio: string
-    password: string
+
 }
+
 
 interface UserPayload {
     userErrors: {
@@ -17,7 +22,8 @@ interface UserPayload {
     token: string | null
 }
 export const authResolvers = {
-    signUp: async (__: any, { bio, email, name, password }: SignUpArgs, { prisma }: Context): Promise<UserPayload> => {
+    signUp: async (__: any, { bio, credentials, name, }: SignUpArgs, { prisma }: Context): Promise<UserPayload> => {
+        const { email, password } = credentials
         const isEmail = validator.isEmail(email);
 
         if (!isEmail) {
@@ -63,6 +69,12 @@ export const authResolvers = {
                 password: hashedPassword
             }
         })
+        await prisma.profile.create({
+            data: {
+                bio,
+                userId: user.id
+            }
+        })
 
         const token = await Jwt.sign({
             userID: user.id,
@@ -75,5 +87,50 @@ export const authResolvers = {
             userErrors: [],
             token
         }
+    },
+    signIn: async (__: any, { credentials }: Pick<SignUpArgs, 'credentials'>, { prisma }: Context): Promise<UserPayload> => {
+        const { email, password } = credentials
+        const user = await prisma.user.findUnique({
+            where: {
+                email
+            }
+        })
+
+        if (!user) {
+            return {
+                userErrors: [
+                    {
+                        message: "Invalid email",
+                    },
+                ],
+                token: null,
+            };
+        }
+
+        const ifPasswordMatch = await bcrypt.compare(password, user.password)
+
+        if (!ifPasswordMatch) {
+            return {
+                userErrors: [
+                    {
+                        message: "Invalid password",
+                    },
+                ],
+                token: null,
+            };
+        }
+        const token = await Jwt.sign({
+            userID: user.id,
+        }, JWT_SIGNTURE, {
+            expiresIn: 3600000
+        })
+        return {
+            userErrors: [
+                {
+                    message: "",
+                },
+            ],
+            token,
+        };
     }
 }

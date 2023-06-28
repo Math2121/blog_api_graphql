@@ -1,5 +1,6 @@
 import { Post, Prisma } from "@prisma/client";
 import { Context } from "../..";
+import { canUserMutatePost } from "../../utils/canUserMutatoPost";
 
 interface postArgs {
     post: {
@@ -14,7 +15,15 @@ interface PostPayloadType {
     post: Post | Prisma.Prisma__PostClient<Post> | null
 }
 export const postResolvers = {
-    postCreate: async (_: any, { post }: postArgs, { prisma }: Context): Promise<PostPayloadType> => {
+    postCreate: async (_: any, { post }: postArgs, { prisma, userInfo }: Context): Promise<PostPayloadType> => {
+        if (!userInfo) {
+            return {
+                userErrors: [{
+                    message: 'Forbiden Access'
+                }],
+                post: null
+            }
+        }
         const { title, content } = post
         if (!title || !content) {
             return {
@@ -32,13 +41,27 @@ export const postResolvers = {
                 data: {
                     title,
                     content,
-                    authorId: 1
+                    authorId: userInfo.userId
                 }
             })
         }
 
     },
-    postUpdate: async (_: any, { post, postId }: { postId: string, post: postArgs["post"] }, { prisma }: Context): Promise<PostPayloadType> => {
+    postUpdate: async (_: any, { post, postId }: { postId: string, post: postArgs["post"] }, { prisma, userInfo }: Context): Promise<PostPayloadType> => {
+        if (!userInfo) {
+            return {
+                userErrors: [{
+                    message: " Forbidden access"
+                }],
+                post: null
+
+            }
+        }
+
+        const errorIfPostNowAllowedForUser = await canUserMutatePost({
+            postId: Number(postId), userId: userInfo.userId, prisma
+        })
+        if (errorIfPostNowAllowedForUser) return errorIfPostNowAllowedForUser
         const { title, content } = post
         if (!title && !content) {
             return {
@@ -105,6 +128,60 @@ export const postResolvers = {
         return {
             userErrors: [],
             post: postDeleted
+        }
+    },
+    postPublish: async (_: any, { postId }: { postId: string }, { prisma, userInfo }: Context): Promise<PostPayloadType> => {
+        if (!userInfo) {
+            return {
+                userErrors: [{
+                    message: " Forbidden access"
+                }],
+                post: null
+
+            }
+        }
+
+        const errorIfPostNowAllowedForUser = await canUserMutatePost({
+            postId: Number(postId), userId: userInfo.userId, prisma
+        })
+        if (errorIfPostNowAllowedForUser) return errorIfPostNowAllowedForUser
+
+        return {
+            userErrors: [],
+            post: prisma.post.update({
+                where: {
+                    id: Number(postId)
+                }, data:{
+                    published: true
+                }
+            })
+        }
+    },
+    postUnpublish: async (_: any, { postId }: { postId: string }, { prisma, userInfo }: Context): Promise<PostPayloadType> => {
+        if (!userInfo) {
+            return {
+                userErrors: [{
+                    message: " Forbidden access"
+                }],
+                post: null
+
+            }
+        }
+
+        const errorIfPostNowAllowedForUser = await canUserMutatePost({
+            postId: Number(postId), userId: userInfo.userId, prisma
+        })
+        if (errorIfPostNowAllowedForUser) return errorIfPostNowAllowedForUser
+
+        return {
+            userErrors: [],
+            post: prisma.post.update({
+                where: {
+                    id: Number(postId)
+                }, data:{
+                    published: false
+                }
+            })
         }
     }
 }
